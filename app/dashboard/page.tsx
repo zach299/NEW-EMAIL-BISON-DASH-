@@ -1,7 +1,5 @@
 "use client";
 
-export const dynamic = 'force-dynamic';
-
 import { useEffect, useState, useCallback } from "react";
 import { format, subDays } from "date-fns";
 import { supabase } from "@/lib/supabase/client";
