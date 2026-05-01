@@ -92,6 +92,8 @@ export default function DashboardPage() {
       if (data && data.length > 0) {
         setClients(data);
         setFilters((f) => ({ ...f, clientId: data[0].id }));
+      } else {
+        setLoading(false);
       }
     }
     loadClients();
@@ -124,7 +126,10 @@ export default function DashboardPage() {
   }, [filters.clientId]);
 
   const loadData = useCallback(async () => {
-    if (!filters.clientId) return;
+    if (!filters.clientId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 
