@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { format, subDays } from "date-fns";
-import { supabase } from "@/lib/supabase/client";
+import { supabase, isMisconfigured } from "@/lib/supabase/client";
 import {
   computeKPIs,
   computeDailySent,
@@ -80,6 +80,11 @@ export default function DashboardPage() {
 
   // Load clients on mount
   useEffect(() => {
+    if (isMisconfigured) {
+      setError("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your Vercel environment variables.");
+      setLoading(false);
+      return;
+    }
     async function loadClients() {
       const { data, error } = await supabase
         .from("clients")
@@ -87,6 +92,7 @@ export default function DashboardPage() {
         .order("name");
       if (error) {
         setError("Failed to load clients: " + error.message);
+        setLoading(false);
         return;
       }
       if (data && data.length > 0) {
