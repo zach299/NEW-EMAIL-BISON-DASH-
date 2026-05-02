@@ -3,11 +3,13 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import {
+  fetchWorkspaces,
   fetchCampaigns,
   fetchSentEvents,
   fetchReplyEvents,
   fetchBounceEvents,
   fetchLeads,
+  type EBCredentials,
 } from "@/lib/emailbison/api";
 import { transformEvent, transformLead } from "@/lib/emailbison/transform";
 
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   const { data: clients, error: clientErr } = await supabase
     .from("clients")
-    .select("id, name, emailbison_workspace_id");
+    .select("id, name, emailbison_workspace_id, emailbison_api_key, emailbison_base_url");
 
   if (clientErr || !clients) {
     return NextResponse.json({ error: "Failed to fetch clients" }, { status: 500 });
@@ -33,14 +35,34 @@ export async function GET(req: NextRequest) {
   const results: Record<string, unknown>[] = [];
 
   for (const client of clients) {
-    const workspaceId = client.emailbison_workspace_id;
-    if (!workspaceId) {
-      results.push({ client: client.name, skipped: true, reason: "no workspace_id" });
+    const apiKey = client.emailbison_api_key ?? process.env.EMAILBISON_API_KEY;
+    const baseUrl = client.emailbison_base_url ?? process.env.EMAILBISON_BASE_URL ?? "https://api.emailbison.com";
+
+    if (!apiKey) {
+      results.push({ client: client.name, skipped: true, reason: "no api key" });
       continue;
     }
 
+    const creds: EBCredentials = { apiKey, baseUrl };
+
+    // Auto-discover workspace ID if not set
+    let workspaceId = client.emailbison_workspace_id;
+    if (!workspaceId) {
+      const workspaces = await fetchWorkspaces(creds);
+      if (workspaces.length === 0) {
+        results.push({ client: client.name, skipped: true, reason: "could not discover workspace ID" });
+        continue;
+      }
+      workspaceId = String(workspaces[0].id);
+      await supabase
+        .from("clients")
+        .update({ emailbison_workspace_id: workspaceId })
+        .eq("id", client.id);
+      console.log(`[Sync] Auto-discovered workspace ID ${workspaceId} for client ${client.name}`);
+    }
+
     try {
-      const ebCampaigns = await fetchCampaigns(workspaceId);
+      const ebCampaigns = await fetchCampaigns(workspaceId, creds);
       let totalEvents = 0;
       let totalLeads = 0;
 
@@ -70,10 +92,10 @@ export async function GET(req: NextRequest) {
         }
 
         const [sent, replies, bounces, leads] = await Promise.all([
-          fetchSentEvents(workspaceId, ebCampaign.id),
-          fetchReplyEvents(workspaceId, ebCampaign.id),
-          fetchBounceEvents(workspaceId, ebCampaign.id),
-          fetchLeads(workspaceId, ebCampaign.id),
+          fetchSentEvents(workspaceId, ebCampaign.id, creds),
+          fetchReplyEvents(workspaceId, ebCampaign.id, creds),
+          fetchBounceEvents(workspaceId, ebCampaign.id, creds),
+          fetchLeads(workspaceId, ebCampaign.id, creds),
         ]);
 
         const allEvents = [...sent, ...replies, ...bounces];
@@ -101,6 +123,7 @@ export async function GET(req: NextRequest) {
 
       results.push({
         client: client.name,
+        workspace_id: workspaceId,
         campaigns: ebCampaigns.length,
         events_synced: totalEvents,
         leads_synced: totalLeads,

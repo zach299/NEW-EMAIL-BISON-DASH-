@@ -5,6 +5,8 @@ export interface Client {
   name: string;
   logo_url: string | null;
   emailbison_workspace_id: string | null;
+  emailbison_api_key?: string | null;
+  emailbison_base_url?: string | null;
   created_at: string;
 }
 
