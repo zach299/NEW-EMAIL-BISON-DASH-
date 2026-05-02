@@ -5,6 +5,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import {
   fetchWorkspaces,
   fetchCampaigns,
+  fetchCampaignsNoWorkspace,
   fetchSentEvents,
   fetchReplyEvents,
   fetchBounceEvents,
@@ -49,20 +50,22 @@ export async function GET(req: NextRequest) {
     let workspaceId = client.emailbison_workspace_id;
     if (!workspaceId) {
       const workspaces = await fetchWorkspaces(creds);
-      if (workspaces.length === 0) {
-        results.push({ client: client.name, skipped: true, reason: "could not discover workspace ID" });
-        continue;
+      if (workspaces.length > 0) {
+        workspaceId = String(workspaces[0].id);
+        await supabase
+          .from("clients")
+          .update({ emailbison_workspace_id: workspaceId })
+          .eq("id", client.id);
+        console.log(`[Sync] Auto-discovered workspace ID ${workspaceId} for client ${client.name}`);
       }
-      workspaceId = String(workspaces[0].id);
-      await supabase
-        .from("clients")
-        .update({ emailbison_workspace_id: workspaceId })
-        .eq("id", client.id);
-      console.log(`[Sync] Auto-discovered workspace ID ${workspaceId} for client ${client.name}`);
+      // workspaceId may still be null — workspace-scoped keys use URL without workspace ID
     }
 
     try {
-      const ebCampaigns = await fetchCampaigns(workspaceId, creds);
+      // Workspace-scoped keys: try /campaigns directly if no workspace ID found
+      const ebCampaigns = workspaceId
+        ? await fetchCampaigns(workspaceId, creds)
+        : await fetchCampaignsNoWorkspace(creds);
       let totalEvents = 0;
       let totalLeads = 0;
 

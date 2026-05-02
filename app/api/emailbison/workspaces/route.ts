@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { fetchWorkspaces } from "@/lib/emailbison/api";
+import { fetchWorkspaces, fetchCampaignsNoWorkspace } from "@/lib/emailbison/api";
 
 export async function GET(req: NextRequest) {
   const syncSecret = process.env.SYNC_SECRET;
@@ -28,10 +28,17 @@ export async function GET(req: NextRequest) {
     }
     try {
       const workspaces = await fetchWorkspaces({ apiKey, baseUrl });
+      // Also probe workspace-less campaigns endpoint for scoped keys
+      let scopedCampaignCount: number | null = null;
+      try {
+        const campaigns = await fetchCampaignsNoWorkspace({ apiKey, baseUrl });
+        scopedCampaignCount = campaigns.length;
+      } catch { /* not supported */ }
       results.push({
         client: client.name,
         current_workspace_id: client.emailbison_workspace_id,
         available_workspaces: workspaces,
+        scoped_campaigns_at_root: scopedCampaignCount,
       });
     } catch (err) {
       results.push({

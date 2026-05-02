@@ -31,18 +31,40 @@ async function ebFetch<T>(path: string, creds?: EBCredentials): Promise<T> {
 }
 
 export async function fetchWorkspaces(creds: EBCredentials): Promise<{ id: string; name: string; slug?: string }[]> {
-  // Try known endpoint patterns
-  const paths = ["/api/v1/workspaces", "/api/workspaces", "/v1/workspaces"];
-  for (const path of paths) {
+  // Try list endpoint first (may return just the one scoped workspace)
+  const listPaths = ["/api/v1/workspaces", "/api/workspaces"];
+  for (const path of listPaths) {
     try {
       const data = await ebFetch<{ workspaces?: unknown[]; data?: unknown[] }>(path, creds);
       const list = (data.workspaces ?? data.data ?? []) as { id: string; name: string; slug?: string }[];
       if (list.length > 0) return list;
     } catch {
-      // try next path
+      // try next
     }
   }
+
+  // For workspace-scoped keys, try singular /workspace or /me endpoint
+  const singlePaths = ["/api/v1/workspace", "/api/v1/me", "/api/v1/user"];
+  for (const path of singlePaths) {
+    try {
+      const data = await ebFetch<{ workspace?: unknown; data?: unknown; id?: string; name?: string }>(path, creds);
+      const ws = (data.workspace ?? data.data ?? data) as { id?: string; name?: string };
+      if (ws?.id) return [{ id: String(ws.id), name: ws.name ?? "workspace" }];
+    } catch {
+      // try next
+    }
+  }
+
   return [];
+}
+
+// For workspace-scoped keys the workspace ID may be omitted from the URL
+export async function fetchCampaignsNoWorkspace(creds: EBCredentials): Promise<EmailBisonCampaign[]> {
+  const data = await ebFetch<{ campaigns?: EmailBisonCampaign[]; data?: EmailBisonCampaign[] }>(
+    "/api/v1/campaigns",
+    creds
+  );
+  return data.campaigns ?? data.data ?? [];
 }
 
 export async function fetchCampaigns(workspaceId: string, creds?: EBCredentials): Promise<EmailBisonCampaign[]> {
